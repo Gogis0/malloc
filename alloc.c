@@ -110,7 +110,7 @@ int my_alloc(unsigned int size) {
     char buffer[p_size];
 
     /* ak ziadam vacsiu pamat ako mam dokopy */
-    if (size > m_size - p_size) return FAIL;
+    if (size > m_size - p_size || size <= 0) return FAIL;
 
     preamble act_block;
     int offset = 0, found_suitable_block = 0;
