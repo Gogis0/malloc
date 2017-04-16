@@ -49,6 +49,21 @@ void write_preamble(preamble p) {
     }
 }
 
+void merge(preamble *a, preamble *b) {
+    int p_size = sizeof(preamble);
+
+    a->size += b->size + p_size;
+    a->next = b->next;
+    
+    write_preamble(*a);
+    write_preamble(*b);
+    if (b->next != -1) {
+        preamble after_b = read_preamble(b->next);
+        after_b.prev = b->prev;
+        write_preamble(after_b);
+    }
+}
+
 
 /**
  * Inicializacia pamate
@@ -146,38 +161,36 @@ int my_alloc(unsigned int size) {
 
 int my_free(unsigned int addr) {
     int p_size = sizeof(preamble);
-    char buffer[p_size];
+    
+    preamble act_block;
+    int offset = 0, is_valid = 0;
+    do {
+        act_block = read_preamble(offset);
+        if (act_block.addr == addr) {
+            is_valid = 1;
+            break;
+        }
+        offset = act_block.next;
+    } while (act_block.next != -1);
 
-    preamble act_block = read_preamble(addr - p_size);
+    if (!is_valid) return FAIL;
     act_block.free = 1;
 
     /* ak je predchadzajuci block free, mergni */
     if (act_block.prev != -1) {
         preamble prev_block = read_preamble(act_block.prev);
         if (prev_block.free) {
-            prev_block.next = act_block.next;
-            prev_block.size += act_block.size + p_size;
-
+            merge(&prev_block, &act_block);
             act_block = prev_block;
-
-            preamble next_block = read_preamble(act_block.next);
-            next_block.prev = act_block.addr - p_size;
-            write_preamble(next_block);
         }
     }
 
     /* ak je nasledujuci block free, mergni */
     if (act_block.next != -1) {
         preamble next_block = read_preamble(act_block.next);
-        if (next_block.free) {
-            act_block.next = next_block.next;
-            act_block.size += next_block.size + p_size;
-
-            preamble after_next = read_preamble(next_block.next);
-            after_next.prev = next_block.prev;
-        }
+        if (next_block.free) merge(&act_block, &next_block);
     }
-
-    /* zapis upraveny usek */
     write_preamble(act_block);
+
+    return OK;
 }
