@@ -109,7 +109,7 @@ int my_alloc(unsigned int size) {
     int m_size = msize();
     char buffer[p_size];
 
-    /* ak ziadam vacsiu pamat ako mam dokopy */
+    /* ak ziadam vacsiu pamat ako mam dokopy alebo nieco nekladne */
     if (size > m_size - p_size || size <= 0) return FAIL;
 
     preamble act_block;
