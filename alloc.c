@@ -108,9 +108,10 @@ int my_alloc(unsigned int size) {
     int p_size = sizeof(preamble); 
     int m_size = msize();
     char buffer[p_size];
+    fprintf(stderr, "chcem alokovat: %u\n", size);
 
     /* ak ziadam vacsiu pamat ako mam dokopy alebo nieco nekladne */
-    if (size > m_size - p_size || size <= 0) return FAIL;
+    if ((size > m_size - p_size) || (size <= 0)) return FAIL;
 
     preamble act_block;
     int offset = 0, found_suitable_block = 0;
@@ -135,6 +136,7 @@ int my_alloc(unsigned int size) {
     if (act_block.size - size > p_size) {
         preamble new_block;
         new_block.free = 1;
+        new_block.size = act_block.size - size - p_size;
         new_block.prev = act_block.addr - p_size;
         new_block.next = act_block.next;
         new_block.addr = act_block.addr + size + p_size;
