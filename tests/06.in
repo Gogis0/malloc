@@ -1,0 +1,21 @@
+free 1044
+alloc -2
+alloc 21
+free 1267
+free 235
+free 564
+alloc 132
+alloc -14
+free 256
+free 903
+alloc 21
+free 795
+free 494
+free 626
+free 1128
+alloc 101
+alloc 19
+free 1794
+alloc -71
+alloc 211
+end
