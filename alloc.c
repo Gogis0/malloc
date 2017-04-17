@@ -41,6 +41,7 @@ preamble read_preamble(int pos) {
 
 void write_preamble(preamble p) {
     int p_size = sizeof(preamble);
+    int m_size = msize();
     char buffer[p_size];
     memcpy(buffer, &p, p_size);
 
@@ -51,12 +52,9 @@ void write_preamble(preamble p) {
 
 void merge(preamble *a, preamble *b) {
     int p_size = sizeof(preamble);
-
     a->size += b->size + p_size;
     a->next = b->next;
     
-    write_preamble(*a);
-    write_preamble(*b);
     if (b->next != -1) {
         preamble after_b = read_preamble(b->next);
         after_b.prev = b->prev;
@@ -94,7 +92,7 @@ void my_init(void) {
     /* zapisem mantinely do pamate */
     write_preamble(init);
     write_preamble(term);
-    fprintf(stderr, "%s\n", "INITIALIZATION FINISHED");
+    /* fprintf(stderr, "%s\n", "INITIALIZATION FINISHED"); */
 }
 
 /**
@@ -107,20 +105,19 @@ void my_init(void) {
 int my_alloc(unsigned int size) {
     int p_size = sizeof(preamble); 
     int m_size = msize();
-    char buffer[p_size];
-    fprintf(stderr, "chcem alokovat: %u\n", size);
+/*    fprintf(stderr, "chcem alokovat: %d\n", (int)size); */
 
     /* ak ziadam vacsiu pamat ako mam dokopy alebo nieco nekladne */
-    if ((size > m_size - p_size) || (size <= 0)) return FAIL;
+    if (((int)size > m_size - 2*p_size) || ((int)size <= 0)) return FAIL;
 
     preamble act_block;
     int offset = 0, found_suitable_block = 0;
     do {
         /* nacitam preambulu */
         act_block = read_preamble(offset);
-        /* fprintf(stderr, "%d\n", act_block.addr); */
+        /* if (act_block.addr == 0) fprintf(stderr, "%d\n", act_block.size); */
 
-        if (act_block.free && act_block.size >= size) {
+        if (act_block.free && act_block.size >= (int)size) {
             found_suitable_block = 1;
             break;
         }
@@ -130,25 +127,30 @@ int my_alloc(unsigned int size) {
     /* ak som nenasiel vhodny blok, vratim FAIL */
     if (!found_suitable_block) return FAIL;
 
-    /* nasiel som vhodne miesto, obsadim z neho kolko potrebujem */
-
     /* ak mi ostalo dost pamate vytvorim doplnujuci block */
-    if (act_block.size - size > p_size) {
+    if ((int)(act_block.size - size - p_size) > 0) {
         preamble new_block;
         new_block.free = 1;
-        new_block.size = act_block.size - size - p_size;
+        new_block.size = (int)(act_block.size - size - p_size);
         new_block.prev = act_block.addr - p_size;
         new_block.next = act_block.next;
-        new_block.addr = act_block.addr + size + p_size;
+        new_block.addr = (int)(act_block.addr + size + p_size);
         write_preamble(new_block);
-    }
-   
-    /* useknem stary block */
-    act_block.free = 0;
-    act_block.size = size;
-    act_block.next = act_block.addr + size;
-    write_preamble(act_block);
 
+        /* ak existuje nasledujuci prvok, updatnem mu prev */
+        if (act_block.next != -1) {
+            preamble next_block = read_preamble(act_block.next);
+            next_block.prev = new_block.addr - p_size;
+            write_preamble(next_block);
+        }
+
+         /* useknem stary block */
+        act_block.size = size;
+        act_block.next = act_block.addr + size;
+    }
+    act_block.free = 0;
+    write_preamble(act_block);
+    
     /* vratim zaciatok alokovanej pamate */
     return act_block.addr;
 }
@@ -163,12 +165,15 @@ int my_alloc(unsigned int size) {
 
 int my_free(unsigned int addr) {
     int p_size = sizeof(preamble);
+    int m_size = msize();
+
+    if ((addr >= m_size - p_size)  || ((int)addr < 0)) return FAIL;
     
     preamble act_block;
     int offset = 0, is_valid = 0;
     do {
         act_block = read_preamble(offset);
-        if (act_block.addr == addr) {
+        if (act_block.addr == (int)addr && act_block.free == 0) {
             is_valid = 1;
             break;
         }
@@ -184,9 +189,8 @@ int my_free(unsigned int addr) {
         if (prev_block.free) {
             merge(&prev_block, &act_block);
             act_block = prev_block;
-        }
+       }
     }
-
     /* ak je nasledujuci block free, mergni */
     if (act_block.next != -1) {
         preamble next_block = read_preamble(act_block.next);
