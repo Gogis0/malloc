@@ -122,6 +122,8 @@ int my_alloc(unsigned int size) {
             break;
         }
         offset = act_block.next;
+        /* ak uz nemozem najst vhodny block */
+        if (m_size - p_size - offset - 1 < (int)size) break;
     } while (act_block.next != -1);
 
     /* ak som nenasiel vhodny blok, vratim FAIL */
@@ -178,7 +180,9 @@ int my_free(unsigned int addr) {
             break;
         }
         offset = act_block.next;
-    } while (act_block.next != -1);
+        /* ak uz nemozem najst vhodny block */
+        if (offset >= (int)addr) break;
+   } while (act_block.next != -1);
 
     if (!is_valid) return FAIL;
     act_block.free = 1;
