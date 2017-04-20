@@ -1,8 +1,8 @@
 import random
 from subprocess import Popen, PIPE
 
-mem_size = 5000
-queries = 100
+mem_size = 2000
+queries = 1000
 
 segments = []
 allocated, allocations = 0, 0

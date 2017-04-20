@@ -70,7 +70,8 @@ void merge(preamble *a, preamble *b) {
 void my_init(void) {
     int p_size = sizeof(preamble);
     int m_size = msize();
-
+    /* ak nemam dostatok priestoru pre 2 preambuly */ 
+    if (m_size < 2*p_size) return;
     /* zaciatok */
     preamble init;
     init.free = 1;
@@ -100,6 +101,13 @@ int my_alloc(unsigned int size) {
     int p_size = sizeof(preamble); 
     int m_size = msize();
 /*    fprintf(stderr, "chcem alokovat: %d\n", (int)size); */
+    
+    /* solution for small memory space */
+    if (m_size == 1) return -1;
+    if (m_size < 2*p_size) {
+        if (mread(0) == 1) return FAIL;
+        else { mwrite(0, 1); return 1; }
+    }
 
     /* ak ziadam vacsiu pamat ako mam dokopy alebo nieco nekladne */
     if (((int)size > m_size - 2*p_size) || ((int)size <= 0)) return FAIL;
@@ -162,6 +170,13 @@ int my_alloc(unsigned int size) {
 int my_free(unsigned int addr) {
     int p_size = sizeof(preamble);
     int m_size = msize();
+
+    /* solution for small memory space */
+    if (m_size == 1) return FAIL;
+    if (m_size < 2*p_size) {
+        if (mread(0) == 1) { mwrite(0, 0); return OK; }
+        else return FAIL;
+    }
 
     if ((addr >= m_size - p_size)  || ((int)addr < 0)) return FAIL;
     
