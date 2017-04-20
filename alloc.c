@@ -18,8 +18,8 @@
  */
 
 typedef struct block_info {
-    int prev;
-    int next;
+    int prev; /* ukazovatel na nasledujuci block */
+    int next; /* ukazovatel na predchadzajuci block */
     char free; /* flag o tom, ci je block volny (8-bitov staci) */
 } preamble;
 
@@ -28,7 +28,7 @@ preamble read_preamble(int pos) {
     int p_size = sizeof(preamble);
     char buffer[p_size];
     preamble p;
-    if (pos < 0 || pos >= msize()) fprintf(stderr, "katastrofa: %d\n", pos);
+
     for (int i = pos; i < pos + p_size; i++) {
         buffer[i - pos] = mread(i);
     }
@@ -47,6 +47,7 @@ void write_preamble(preamble p, int pos) {
         mwrite(i, buffer[i - pos]);
     }
 }
+
 
 void merge(preamble *a, preamble *b) {
     int p_size = sizeof(preamble);
