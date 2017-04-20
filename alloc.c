@@ -20,9 +20,7 @@
 typedef struct block_info {
     int prev;
     int next;
-    int size; /* velkost pamate bloku */
-    int addr; /* zaciatok pamate bloku */
-    int free; /* info ci je block volny */
+    char free; /* flag o tom, ci je block volny (8-bitov staci) */
 } preamble;
 
 
@@ -30,7 +28,7 @@ preamble read_preamble(int pos) {
     int p_size = sizeof(preamble);
     char buffer[p_size];
     preamble p;
-
+    if (pos < 0 || pos >= msize()) fprintf(stderr, "katastrofa: %d\n", pos);
     for (int i = pos; i < pos + p_size; i++) {
         buffer[i - pos] = mread(i);
     }
@@ -39,26 +37,25 @@ preamble read_preamble(int pos) {
 }
 
 
-void write_preamble(preamble p) {
+void write_preamble(preamble p, int pos) {
     int p_size = sizeof(preamble);
     int m_size = msize();
     char buffer[p_size];
     memcpy(buffer, &p, p_size);
 
-    for (int i = p.addr - p_size; i < p.addr; i++) {
-        mwrite(i, buffer[i - (p.addr - p_size)]);
+    for (int i = pos; i < pos + p_size; i++) {
+        mwrite(i, buffer[i - pos]);
     }
 }
 
 void merge(preamble *a, preamble *b) {
     int p_size = sizeof(preamble);
-    a->size += b->size + p_size;
     a->next = b->next;
     
     if (b->next != -1) {
         preamble after_b = read_preamble(b->next);
         after_b.prev = b->prev;
-        write_preamble(after_b);
+        write_preamble(after_b, b->next);
     }
 }
 
@@ -75,23 +72,19 @@ void my_init(void) {
 
     /* zaciatok */
     preamble init;
-    init.addr = p_size;
-    init.size = m_size - 2*p_size;
     init.free = 1;
     init.next = m_size - p_size;
     init.prev = -1;
 
     /* koniec */
     preamble term;
-    term.addr = m_size;
-    term.size = 0;
     term.next = -1;
     term.prev = 0;
     term.free = 0;
 
     /* zapisem mantinely do pamate */
-    write_preamble(init);
-    write_preamble(term);
+    write_preamble(init, 0);
+    write_preamble(term, init.next);
     /* fprintf(stderr, "%s\n", "INITIALIZATION FINISHED"); */
 }
 
@@ -111,18 +104,20 @@ int my_alloc(unsigned int size) {
     if (((int)size > m_size - 2*p_size) || ((int)size <= 0)) return FAIL;
 
     preamble act_block;
-    int offset = 0, found_suitable_block = 0;
+    int offset = 0, act_size = -1, act_addr = -1;
+    char found_suitable_block = 0;
     do {
         /* nacitam preambulu */
         act_block = read_preamble(offset);
-        /* if (act_block.addr == 0) fprintf(stderr, "%d\n", act_block.size); */
+        act_addr = offset + p_size;
+        act_size = (act_block.next == -1 ? m_size-1 : act_block.next) - (offset + p_size);
+        /* if (act_addr == 0) fprintf(stderr, "%d\n", act_size); */
 
-        if (act_block.free && act_block.size >= (int)size) {
+        if (act_block.free && act_size >= (int)size) {
             found_suitable_block = 1;
             break;
         }
         offset = act_block.next;
-        /* ak uz nemozem najst vhodny block */
         if (m_size - p_size - offset - 1 < (int)size) break;
     } while (act_block.next != -1);
 
@@ -130,31 +125,29 @@ int my_alloc(unsigned int size) {
     if (!found_suitable_block) return FAIL;
 
     /* ak mi ostalo dost pamate vytvorim doplnujuci block */
-    if ((int)(act_block.size - size - p_size) > 0) {
+    if ((int)(act_size - size - p_size) > 0) {
         preamble new_block;
         new_block.free = 1;
-        new_block.size = (int)(act_block.size - size - p_size);
-        new_block.prev = act_block.addr - p_size;
+        new_block.prev = act_addr - p_size;
         new_block.next = act_block.next;
-        new_block.addr = (int)(act_block.addr + size + p_size);
-        write_preamble(new_block);
+        int new_addr = (int)(act_addr + size + p_size);
+        write_preamble(new_block, new_addr - p_size);
 
         /* ak existuje nasledujuci prvok, updatnem mu prev */
         if (act_block.next != -1) {
             preamble next_block = read_preamble(act_block.next);
-            next_block.prev = new_block.addr - p_size;
-            write_preamble(next_block);
+            next_block.prev = new_addr - p_size;
+            write_preamble(next_block, act_block.next);
         }
 
          /* useknem stary block */
-        act_block.size = size;
-        act_block.next = act_block.addr + size;
+        act_block.next = act_addr + size;
     }
     act_block.free = 0;
-    write_preamble(act_block);
+    write_preamble(act_block, offset);
     
     /* vratim zaciatok alokovanej pamate */
-    return act_block.addr;
+    return act_addr;
 }
 
 /**
@@ -172,10 +165,12 @@ int my_free(unsigned int addr) {
     if ((addr >= m_size - p_size)  || ((int)addr < 0)) return FAIL;
     
     preamble act_block;
-    int offset = 0, is_valid = 0;
+    int offset = 0, act_addr = -1;
+    char is_valid = 0;
     do {
         act_block = read_preamble(offset);
-        if (act_block.addr == (int)addr && act_block.free == 0) {
+        act_addr = offset + p_size;
+        if (act_addr == (int)addr && act_block.free == 0) {
             is_valid = 1;
             break;
         }
@@ -192,6 +187,7 @@ int my_free(unsigned int addr) {
         preamble prev_block = read_preamble(act_block.prev);
         if (prev_block.free) {
             merge(&prev_block, &act_block);
+            offset = act_block.prev;
             act_block = prev_block;
        }
     }
@@ -200,7 +196,7 @@ int my_free(unsigned int addr) {
         preamble next_block = read_preamble(act_block.next);
         if (next_block.free) merge(&act_block, &next_block);
     }
-    write_preamble(act_block);
+    write_preamble(act_block, offset);
 
     return OK;
 }
