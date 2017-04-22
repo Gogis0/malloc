@@ -1,6 +1,7 @@
 #include "wrapper.h"
 #include <stdio.h>
 #include <string.h>
+#define SZ_HEADER (sizeof(int)+sizeof(char))
 
 /* Kod funkcii my_alloc a my_free nahradte vlastnym. Nepouzivajte ziadne
  * globalne ani staticke premenne; jedina globalna pamat je dostupna pomocou
@@ -24,26 +25,37 @@ typedef struct block_info {
 
 
 preamble read_preamble(int pos) {
-    int p_size = sizeof(preamble);
-    char buffer[p_size];
+    int sz_int = sizeof(int), sz_char = sizeof(char);
+    char buffer[sz_int];
     preamble p;
 
-    for (int i = pos; i < pos + p_size; i++) {
+    for (int i = pos; i < pos + sz_int; i++) {
         buffer[i - pos] = mread(i);
     }
-    memcpy(&p, buffer, p_size);
+    memcpy(&p.next, buffer, sz_int);
+
+    for (int i = pos + sz_int; i < pos + sz_int + sz_char; i++) {
+        buffer[i - (pos + sz_int)] = mread(i);
+    }
+    memcpy(&p.free, buffer, sz_char);
+
     return p;
 }
 
 
 void write_preamble(preamble p, int pos) {
-    int p_size = sizeof(preamble);
-    int m_size = msize();
-    char buffer[p_size];
-    memcpy(buffer, &p, p_size);
+    int sz_int = sizeof(int), sz_char = sizeof(char);
+    char buffer[sz_int];
 
-    for (int i = pos; i < pos + p_size; i++) {
+    memcpy(buffer, &p.next, sz_int);
+    for (int i = pos; i < pos + sz_int; i++) {
         mwrite(i, buffer[i - pos]);
+    }
+
+    memcpy(buffer, &p.free, sz_char);
+    int from = pos + sz_int;
+    for (int i = from; i < from + sz_char; i++) {
+        mwrite(i, buffer[i - from]);
     }
 }
 
@@ -60,14 +72,13 @@ void merge(preamble *a, preamble *b) {
  * na 0.
  */
 void my_init(void) {
-    int p_size = sizeof(preamble);
     int m_size = msize();
     /* ak nemam dostatok priestoru pre 2 preambuly */ 
-    if (m_size < 2*p_size) return;
+    if (m_size < 2*SZ_HEADER) return;
     /* zaciatok */
     preamble init;
     init.free = 1;
-    init.next = m_size - p_size;
+    init.next = m_size - SZ_HEADER;
 
     /* koniec */
     preamble term;
@@ -78,6 +89,7 @@ void my_init(void) {
     write_preamble(init, 0);
     write_preamble(term, init.next);
     /* fprintf(stderr, "%s\n", "INITIALIZATION FINISHED"); */
+
 }
 
 /**
@@ -88,19 +100,18 @@ void my_init(void) {
  * vracia FAIL.
  */
 int my_alloc(unsigned int size) {
-    int p_size = sizeof(preamble); 
     int m_size = msize();
 /*    fprintf(stderr, "chcem alokovat: %d\n", (int)size); */
     
     /* solution for small memory space */
     if (m_size == 1) return -1;
-    if (m_size < 2*p_size) {
+    if (m_size < 2*SZ_HEADER) {
         if (mread(0) == 1) return FAIL;
         else { mwrite(0, 1); return 1; }
     }
 
     /* ak ziadam vacsiu pamat ako mam dokopy alebo nieco nekladne */
-    if (((int)size > m_size - 2*p_size) || ((int)size <= 0)) return FAIL;
+    if (((int)size > m_size - 2*SZ_HEADER) || ((int)size <= 0)) return FAIL;
 
     preamble act_block;
     int offset = 0, act_size = -1, act_addr = -1;
@@ -108,8 +119,8 @@ int my_alloc(unsigned int size) {
     do {
         /* nacitam preambulu */
         act_block = read_preamble(offset);
-        act_addr = offset + p_size;
-        act_size = (act_block.next == -1 ? m_size-1 : act_block.next) - (offset + p_size);
+        act_addr = offset + SZ_HEADER;
+        act_size = (act_block.next == -1 ? m_size-1 : act_block.next) - (offset + SZ_HEADER);
         /* if (act_addr == 0) fprintf(stderr, "%d\n", act_size); */
 
         if (act_block.free && act_size >= (int)size) {
@@ -117,19 +128,19 @@ int my_alloc(unsigned int size) {
             break;
         }
         offset = act_block.next;
-        if (m_size - p_size - offset - 1 < (int)size) break;
+        if (m_size - SZ_HEADER - offset - 1 < (int)size) break;
     } while (act_block.next != -1);
 
     /* ak som nenasiel vhodny blok, vratim FAIL */
     if (!found_suitable_block) return FAIL;
 
     /* ak mi ostalo dost pamate vytvorim doplnujuci block */
-    if ((int)(act_size - size - p_size) > 0) {
+    if ((int)(act_size - size - SZ_HEADER) > 0) {
         preamble new_block;
         new_block.free = 1;
         new_block.next = act_block.next;
-        int new_addr = (int)(act_addr + size + p_size);
-        write_preamble(new_block, new_addr - p_size);
+        int new_addr = (int)(act_addr + size + SZ_HEADER);
+        write_preamble(new_block, new_addr - SZ_HEADER);
 
          /* useknem stary block */
         act_block.next = act_addr + size;
@@ -150,17 +161,16 @@ int my_alloc(unsigned int size) {
  */
 
 int my_free(unsigned int addr) {
-    int p_size = sizeof(preamble);
     int m_size = msize();
 
     /* solution for small memory space */
     if (m_size == 1) return FAIL;
-    if (m_size < 2*p_size) {
+    if (m_size < 2*SZ_HEADER) {
         if (mread(0) == 1) { mwrite(0, 0); return OK; }
         else return FAIL;
     }
 
-    if ((addr >= m_size - p_size)  || ((int)addr < 0)) return FAIL;
+    if ((addr >= m_size - SZ_HEADER)  || ((int)addr < 0)) return FAIL;
     
     preamble act_block, prev_block;
     int offset = 0, act_addr = -1, prev_addr = -1;
@@ -171,7 +181,7 @@ int my_free(unsigned int addr) {
         prev_addr = act_addr;
 
         act_block = read_preamble(offset);
-        act_addr = offset + p_size;
+        act_addr = offset + SZ_HEADER;
         if (act_addr == (int)addr && act_block.free == 0) {
             is_valid = 1;
             break;
@@ -188,7 +198,7 @@ int my_free(unsigned int addr) {
     if (prev_addr != -1) {
         if (prev_block.free) {
             merge(&prev_block, &act_block);
-            offset = prev_addr - p_size;
+            offset = prev_addr - SZ_HEADER;
             act_block = prev_block;
        }
     }
