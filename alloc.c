@@ -18,7 +18,6 @@
  */
 
 typedef struct block_info {
-    int prev; /* ukazovatel na nasledujuci block */
     int next; /* ukazovatel na predchadzajuci block */
     char free; /* flag o tom, ci je block volny (8-bitov staci) */
 } preamble;
@@ -50,14 +49,7 @@ void write_preamble(preamble p, int pos) {
 
 
 void merge(preamble *a, preamble *b) {
-    int p_size = sizeof(preamble);
     a->next = b->next;
-    
-    if (b->next != -1) {
-        preamble after_b = read_preamble(b->next);
-        after_b.prev = b->prev;
-        write_preamble(after_b, b->next);
-    }
 }
 
 
@@ -76,12 +68,10 @@ void my_init(void) {
     preamble init;
     init.free = 1;
     init.next = m_size - p_size;
-    init.prev = -1;
 
     /* koniec */
     preamble term;
     term.next = -1;
-    term.prev = 0;
     term.free = 0;
 
     /* zapisem mantinely do pamate */
@@ -137,17 +127,9 @@ int my_alloc(unsigned int size) {
     if ((int)(act_size - size - p_size) > 0) {
         preamble new_block;
         new_block.free = 1;
-        new_block.prev = act_addr - p_size;
         new_block.next = act_block.next;
         int new_addr = (int)(act_addr + size + p_size);
         write_preamble(new_block, new_addr - p_size);
-
-        /* ak existuje nasledujuci prvok, updatnem mu prev */
-        if (act_block.next != -1) {
-            preamble next_block = read_preamble(act_block.next);
-            next_block.prev = new_addr - p_size;
-            write_preamble(next_block, act_block.next);
-        }
 
          /* useknem stary block */
         act_block.next = act_addr + size;
@@ -180,10 +162,14 @@ int my_free(unsigned int addr) {
 
     if ((addr >= m_size - p_size)  || ((int)addr < 0)) return FAIL;
     
-    preamble act_block;
-    int offset = 0, act_addr = -1;
+    preamble act_block, prev_block;
+    int offset = 0, act_addr = -1, prev_addr = -1;
     char is_valid = 0;
     do {
+        /* nastavim prev */
+        prev_block = act_block;
+        prev_addr = act_addr;
+
         act_block = read_preamble(offset);
         act_addr = offset + p_size;
         if (act_addr == (int)addr && act_block.free == 0) {
@@ -199,11 +185,10 @@ int my_free(unsigned int addr) {
     act_block.free = 1;
 
     /* ak je predchadzajuci block free, mergni */
-    if (act_block.prev != -1) {
-        preamble prev_block = read_preamble(act_block.prev);
+    if (prev_addr != -1) {
         if (prev_block.free) {
             merge(&prev_block, &act_block);
-            offset = act_block.prev;
+            offset = prev_addr - p_size;
             act_block = prev_block;
        }
     }
